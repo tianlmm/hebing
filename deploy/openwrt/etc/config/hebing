@@ -1,0 +1,10 @@
+# OpenWrt UCI 配置 —— hebing 主服务
+# opkg 安装后可通过 LuCI 或 uci 命令修改
+# 例：uci set hebing.main.enabled=0 && uci commit hebing
+
+config hebing 'main'
+	option enabled '1'
+	option app_home '/usr/lib/hebing'
+	option data_dir '/etc/hebing/data'
+	option listen_host '0.0.0.0'
+	option listen_port '8080'

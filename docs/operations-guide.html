@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN" style="margin:0;padding:0;">
+<head>
+<meta charset="UTF-8">
+<title>双网关统一域名 · GUI 操作流程（无需 SSH）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
+    background: #0f172a; color: #e2e8f0; margin: 0; padding: 0; line-height: 1.75;
+  }
+  .page { max-width: 1080px; margin: 0 auto; padding: 48px 32px 80px; }
+  h1 { font-size: 26px; color: #fff; margin: 0 0 6px; font-weight: 700; }
+  .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 28px; }
+  h2 { font-size: 20px; color: #fff; margin: 44px 0 14px; font-weight: 700;
+    border-left: 4px solid #fbbf24; padding-left: 12px; counter-increment: sec;
+  }
+  h2::before { content: "第" counter(sec) "步 · "; color: #fbbf24; }
+  h3 { font-size: 15px; color: #a5f3fc; margin: 22px 0 8px; font-weight: 600; }
+  h4 { font-size: 13px; color: #fde68a; margin: 14px 0 4px; font-weight: 600; }
+  p { margin: 6px 0; color: #cbd5e1; }
+  ul, ol { padding-left: 22px; margin: 6px 0; }
+  li { margin: 4px 0; color: #cbd5e1; }
+
+  /* ---- 步骤标签 ---- */
+  .step { display: inline-block; font-size: 11px; padding: 2px 10px; border-radius: 12px;
+    font-weight: 600; margin-right: 8px; letter-spacing: .5px; }
+  .step.luci    { background: #0369a1;   color: #bae6fd; }
+  .step.cf      { background: #7c3aed;   color: #ddd6fe; }
+  .step.nas     { background: #0f766e;   color: #99f6e4; }
+  .step.browser { background: #475569;   color: #e2e8f0; }
+
+  /* ---- 路径面包屑 ---- */
+  .path { background: #1e293b; border: 1px dashed #475569; padding: 8px 14px;
+    border-radius: 6px; margin: 8px 0; font-size: 13px; color: #cbd5e1; }
+  .path .icon { margin-right: 6px; }
+  .path .arrow { color: #fbbf24; margin: 0 4px; }
+
+  /* ---- 字段表格 ---- */
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px;
+    font-size: 14px; background: #1e293b; border-radius: 8px; overflow: hidden; }
+  th, td { padding: 9px 14px; text-align: left; border-bottom: 1px solid #334155; }
+  th { background: #0f766e; color: #fff; font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  td.label { color: #a5f3fc; font-weight: 500; width: 18%; white-space: nowrap; }
+  td.value { color: #fde68a; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; }
+
+  /* ---- 提示框 ---- */
+  .hint { background: #164e63; border-left: 3px solid #22d3ee; padding: 10px 14px;
+    border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 13px; color: #a5f3fc; }
+  .warn { background: #451a03; border-left: 3px solid #fbbf24; padding: 10px 14px;
+    border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 13px; color: #fde68a; }
+  .ok   { background: #052e16; border-left: 3px solid #22c55e; padding: 10px 14px;
+    border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 13px; color: #86efac; }
+
+  /* ---- 进度条 ---- */
+  .progress {
+    position: sticky; top: 0; z-index: 10; background: #0f172a; padding: 12px 20px;
+    border-radius: 8px; border: 1px solid #334155; margin-bottom: 28px; font-size: 13px;
+  }
+  .progress b { color: #fbbf24; }
+
+  /* ---- 点击流程 ---- */
+  .click-flow { counter-reset: cf; list-style: none; padding: 0; margin: 10px 0; }
+  .click-flow li { counter-increment: cf; position: relative; padding: 8px 14px 8px 42px;
+    margin-bottom: 6px; background: #1e293b; border-radius: 6px; border-left: 2px solid #475569; }
+  .click-flow li::before {
+    content: counter(cf); position: absolute; left: 10px; top: 9px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #0f766e; color: #fff; font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .click-flow li.arrow::after {
+    content: "↓"; position: absolute; left: 17px; bottom: -14px; color: #fbbf24; font-weight: 700;
+  }
+  .click-flow li.sub { background: #0c2340; border-left-color: #1e40af; font-size: 13px; }
+
+  footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid #334155;
+    font-size: 12px; color: #64748b; text-align: center; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ====== 标题 ====== -->
+  <h1>🖱️ 双网关统一域名 · GUI 点击操作流程</h1>
+  <div class="subtitle">全程点网页 / 点界面，<b>不用 SSH，不用输入任何命令</b>。涵盖 OpenWrt LuCI、Cloudflare Dashboard、飞牛 OS。</div>
+
+  <!-- ====== 进度条 ====== -->
+  <div class="progress">
+    <b>路线图：</b>
+    <span>① 前置检查 → ② Cloudflare DNS → ③ OpenWrt 防火墙 → ④ OpenWrt DDNS → ⑤ OpenWrt hebing 包 → ⑥ Cloudflare Tunnel → ⑦ NAS FPK → ⑧ 端到端验证</span>
+  </div>
+
+  <!-- ========================================================== -->
+  <h2>前置检查 & 准备</h2>
+
+  <h3>0.1 需要有的东西</h3>
+  <table>
+    <tr><th style="width:40%">项目</th><th>说明</th><th style="width:25%">在哪确认</th></tr>
+    <tr><td>域名 <code>c.xxx</code> 在 Cloudflare</td><td>DNS 已托管过去</td><td>Cloudflare Dashboard</td></tr>
+    <tr><td>OpenWrt 路由器 x86_64</td><td>浏览器能打开 LuCI <code>http://路由器IP</code></td><td>浏览器</td></tr>
+    <tr><td>IPv6 公网前缀</td><td>运营商已分配</td><td>LuCI 网络 → 接口</td></tr>
+    <tr><td>飞牛 NAS</td><td>浏览器能打开飞牛 OS <code>http://NASIP</code></td><td>浏览器</td></tr>
+    <tr><td>hebing .ipk 安装包</td><td><code>hebing_0.1.0-1_x86_64.ipk</code></td><td>本地电脑 / 网盘 / 邮件附件</td></tr>
+  </table>
+
+  <h3>0.2 确认 IPv6 通（LuCI 里点两下）</h3>
+  <span class="step luci">LuCI</span>
+  <ul class="click-flow">
+    <li>打开浏览器 → <code>http://192.168.1.1</code>（换成你的路由器 IP）登录</li>
+    <li>左侧菜单 <b>网络</b> → <b>接口</b></li>
+    <li>看 WAN6 那一行，"IPv6 地址"一栏应该有一个 <code>240e::</code> / <code>2a08::</code> 开头的公网 IPv6，不是 <code>fd</code> 开头（ULA）</li>
+    <li>左侧菜单 <b>网络</b> → <b>诊断</b> → 诊断工具选 <code>Ping</code> → Ping 主机填 <code>2400:3200::1</code>（Cloudflare 的 IPv6 DNS）→ 点<b>测试</b></li>
+  </ul>
+  <div class="ok">✅ 丢包 0% 就是 IPv6 通了。如果全超时，打运营商电话给光猫改桥接。</div>
+
+  <!-- ========================================================== -->
+  <h2>Cloudflare · DNS 记录</h2>
+
+  <span class="step cf">Cloudflare Dashboard</span>
+  <p>在 Cloudflare 网页端操作：</p>
+  <ul class="click-flow">
+    <li>登录 https://dash.cloudflare.com → 点进你的域名</li>
+    <li>左侧 <b>DNS</b> → <b>Records</b> → 点 <b>Add record</b></li>
+    <li>
+      <table>
+        <tr><td class="label">Type</td><td class="value">AAAA</td></tr>
+        <tr><td class="label">Name</td><td class="value">a</td></tr>
+        <tr><td class="label">Content</td><td class="value">随便填一个占位 v6，例如 <code>240e::1</code>（后面 DDNS 会自动改）</td></tr>
+        <tr><td class="label">Proxy status</td><td><span style="color:#22c55e">⚪ DNS only（灰云图标）</span></td></tr>
+        <tr><td class="label">TTL</td><td class="value">1 min</td></tr>
+      </table>
+    </li>
+    <li>点 <b>Save</b></li>
+  </ul>
+
+  <div class="warn">⚠️ AAAA 记录一定要灰云（DNS only），<b>别开橙云</b>。开了 v6 直连就废掉了。</div>
+
+  <p>保存后，<b>先别管 A 记录</b> —— 等后面第 6 步配置 Cloudflare Tunnel 时它会自动帮你生成。</p>
+
+  <!-- ========================================================== -->
+  <h2>OpenWrt · 放行 IPv6 防火墙</h2>
+
+  <span class="step luci">LuCI</span>
+  <ul class="click-flow">
+    <li>左侧 <b>网络</b> → <b>防火墙</b> → 滚到页面底部 <b>端口转发</b> 下面的 <b>自定义规则</b> 区域（不同版本位置略有差异），或者直接在 <b>通信规则</b> 标签页点 <b>添加</b></li>
+    <li>
+      <table>
+        <tr><td class="label">名称</td><td class="value">Allow-NAS-FPK-v6</td></tr>
+        <tr><td class="label">协议</td><td class="value">tcp</td></tr>
+        <tr><td class="label">源区域</td><td class="value">wan</td></tr>
+        <tr><td class="label">目标区域</td><td class="value">lan</td></tr>
+        <tr><td class="label">目标端口</td><td class="value">8443</td></tr>
+        <tr><td class="label">动作</td><td class="value">接受</td></tr>
+        <tr><td class="label">IPv6</td><td><b>勾上</b>（有些版本有独立的"IPv6 规则"选项卡，也在那里加一条）</td></tr>
+      </table>
+    </li>
+    <li>勾上<b>启用</b> → 点 <b>保存并应用</b></li>
+  </ul>
+
+  <div class="hint">有些 OpenWrt 版本（23.05+ fw4）在"通信规则"里直接有 IPv4/IPv6 分栏，IPv6 那栏也要加一条一模一样的。</div>
+
+  <!-- ========================================================== -->
+  <h2>OpenWrt · 配置 DDNS（让 AAAA 记录自动更新）</h2>
+
+  <span class="step luci">LuCI</span>
+
+  <h3>4.1 先装 DDNS 组件</h3>
+  <ul class="click-flow">
+    <li>左侧 <b>系统</b> → <b>软件包</b> → 点一下 <b>更新列表</b>（刷新一下包索引）</li>
+    <li>右上角搜索框输入 <code>ddns</code> → 分别找到 <b>luci-app-ddns</b> 和 <b>ddns-scripts_cloudflare.com-v4</b> → 各自点 <b>安装</b></li>
+    <li>等安装完，刷新左侧菜单，应该出现一个新的 <b>服务 → DDNS</b></li>
+  </ul>
+
+  <h3>4.2 新建一条 Cloudflare 服务</h3>
+  <ul class="click-flow">
+    <li>左侧 <b>服务</b> → <b>动态 DNS</b> → 点 <b>添加新服务</b></li>
+    <li>
+      <table>
+        <tr><td class="label">启用</td><td><b>✓ 勾上</b></td></tr>
+        <tr><td class="label">服务提供商</td><td class="value">Cloudflare.com-v4</td></tr>
+        <tr><td class="label">主机名</td><td class="value">a.c.xxx</td></tr>
+        <tr><td class="label">用户名</td><td class="value">anything（随便填，CF token 模式忽略）</td></tr>
+        <tr><td class="label">密码</td><td>填 <b>Cloudflare API Token</b>（下面讲怎么生成）</td></tr>
+        <tr><td class="label">IP 地址源</td><td class="value">网络接口</td></tr>
+        <tr><td class="label">网络接口</td><td class="value">wan6</td></tr>
+        <tr><td class="label">IPv6 操作</td><td><b>✓ 勾上</b>（关键！DDNS 脚本只更新 AAAA 需要这个）</td></tr>
+        <tr><td class="label">检查间隔</td><td class="value">60（秒）</td></tr>
+      </table>
+    </li>
+    <li>点 <b>保存并应用</b></li>
+  </ul>
+
+  <h3>4.3 生成 Cloudflare API Token</h3>
+  <span class="step cf">Cloudflare Dashboard</span>
+  <ul class="click-flow">
+    <li>登录 Cloudflare Dashboard → 右上角头像 → <b>我的档案（My Profile）</b> → <b>API Tokens</b> → <b>创建 Token</b></li>
+    <li>模板选 <b>Edit zone DNS</b>，Scope 里只勾 <b>你的那个域名</b></li>
+    <li>其他默认 → 生成 → <b>立即复制保存</b>（只显示一次！）</li>
+  </ul>
+
+  <h3>4.4 把 Token 填回 DDNS 的密码栏</h3>
+  <span class="step luci">LuCI</span>
+  <ul class="click-flow">
+    <li>回到 <b>服务 → 动态 DNS</b>，点那条服务的 <b>编辑</b></li>
+    <li>把刚才生成的 Cloudflare API Token 粘到 <b>密码</b> 框里</li>
+    <li>保存并应用</li>
+  </ul>
+
+  <h3>4.5 看 DDNS 是否在跑</h3>
+  <ul class="click-flow">
+    <li>在 DDNS 服务列表页面，那条服务的状态应该显示 <span style="color:#22c55e">● 已运行</span></li>
+    <li>右侧有个<b>查看日志</b>链接，点开应该能看到：<code>updated to new IPv6 240e:3b2:...::88</code> 这样的成功日志</li>
+  </ul>
+
+  <div class="ok">✅ 验证：去 Cloudflare DNS Records 页面刷新一下，AAAA 记录的值应该自动变成路由器的公网 v6 了。</div>
+
+  <!-- ========================================================== -->
+  <h2>OpenWrt · 安装 hebing 包</h2>
+
+  <span class="step luci">LuCI</span>
+  <div class="warn">⚠️ <code>hebing_0.1.0-1_x86_64.ipk</code> 现在装的是脚手架自带的 mock 二进制，用来验证打包流程没问题。生产部署请替换为真实 hebing 二进制再跑 build-ipk.sh 重新打一次。</div>
+
+  <h3>5.1 先把 .ipk 弄到路由器能访问的地方</h3>
+  <p>LuCI 的软件包页面支持 <b>本地文件上传</b>，所以最简单：</p>
+  <ul>
+    <li>本地电脑打开 <code>dist/openwrt/</code> 文件夹，找到 <code>hebing_0.1.0-1_x86_64.ipk</code></li>
+  </ul>
+
+  <h3>5.2 上传安装</h3>
+  <ul class="click-flow">
+    <li>左侧 <b>系统</b> → <b>软件包</b></li>
+    <li>页面滚到底部，找到 <b>上传软件包</b> 区域（有的版本在右下角）</li>
+    <li>点 <b>选择文件</b> → 选刚才那个 .ipk</li>
+    <li>点 <b>上传并安装</b></li>
+    <li>弹出的确认框点 <b>确定</b></li>
+    <li>看到 <span style="color:#22c55e">安装成功</span> 就 OK 了</li>
+  </ul>
+
+  <h3>5.3 确认 hebing 在运行</h3>
+  <ul class="click-flow">
+    <li>左侧 <b>服务</b> → 应该能看到 <b>hebing</b>（如果没菜单，就去 <b>系统 → 启动项</b> 找）</li>
+    <li>状态应该是 <span style="color:#22c55e">● 运行中</span>，旁边有 <b>重启 / 停止 / 启用 / 禁用</b> 按钮</li>
+    <li>如果在启动项页面，找 "hebing" 那行，<b>已启用</b> 那里应该有勾，<b>运行中</b> 也有勾</li>
+  </ul>
+
+  <h3>5.4 改 hebing 监听端口（配合 Cloudflare Tunnel）</h3>
+  <p>hebing 要监听 CF Tunnel 指向的端口。假设我们统一用 <b>7999</b>：</p>
+  <ul class="click-flow">
+    <li>左侧 <b>服务</b> → <b>hebing</b> → <b>高级设置</b> 标签（或者直接 <b>系统 → UCI 配置</b> 搜 hebing）</li>
+    <li>把 <b>listen_port</b> 改成 <code>7999</code></li>
+    <li>保存并应用 → 页面上点一下 <b>重启</b> 按钮</li>
+  </ul>
+
+  <!-- ========================================================== -->
+  <h2>Cloudflare · Zero Trust Tunnel</h2>
+
+  <span class="step cf">Cloudflare Zero Trust</span>
+  <p>这步创建 v4 穿透隧道，让没有 IPv6 的客户端也能连进来。</p>
+
+  <h3>6.1 创建隧道</h3>
+  <ul class="click-flow">
+    <li>浏览器打开 https://one.dash.cloudflare.com → 登录</li>
+    <li>左侧 <b>Networks</b> → <b>Tunnels</b> → 点 <b>Create a tunnel</b></li>
+    <li>隧道类型选 <b>Cloudflared</b></li>
+    <li>名字填 <code>hebing-v4-fallback</code>（随便起）→ 下一步</li>
+    <li>看到一个大命令框，类似：
+      <pre style="background:#0c2340;color:#93c5fd;padding:10px;border-radius:6px;font-size:12px;">cloudflared service install eyJhbGciOiJSUzI1NiJ9...（很长很长）</pre>
+      <b>直接复制那段 token 部分</b>（<code>eyJ...</code> 开头的那串），保存好。命令本身我们不在路由器上跑。
+    </li>
+  </ul>
+
+  <h3>6.2 配置隧道指向 hebing</h3>
+  <ul class="click-flow">
+    <li>在隧道详情页（刚创建完会自动跳到），点 <b>Public Hostnames</b> → <b>Add a public hostname</b></li>
+    <li>
+      <table>
+        <tr><td class="label">Subdomain</td><td class="value">a</td></tr>
+        <tr><td class="label">Domain</td><td class="value">c.xxx</td></tr>
+        <tr><td class="label">Type</td><td class="value">HTTP</td></tr>
+        <tr><td class="label">URL</td><td class="value">localhost:7999</td></tr>
+      </table>
+    </li>
+    <li>点 <b>Save hostname</b></li>
+  </ul>
+
+  <h3>6.3 安装 cloudflared 到 OpenWrt 并启动隧道</h3>
+  <span class="step luci">LuCI</span>
+  <ul class="click-flow">
+    <li>左侧 <b>系统</b> → <b>软件包</b> → 搜索 <code>cloudflared</code> → 安装 <b>cloudflared</b>（核心程序）和 <b>luci-app-cloudflared</b>（可选，有界面）</li>
+    <li>如果装了 luci-app-cloudflared：左侧菜单出现 <b>服务 → Cloudflare Tunnel</b> → 新建实例，把刚才的 token 粘进去 → 启用</li>
+    <li>如果只装了 cloudflared：用 LuCI 的 <b>系统 → 启动项</b> → 新建一个 init 脚本（或者用 <b>系统 → 调度任务</b> 加一条开机自启）：
+
+      <div class="hint">如果实在不想碰命令，最简单的做法：回到 Zero Trust 隧道详情页，Cloudflare 提供了一个 <b>Run in Cloudflare</b> 选项 —— 让 cloudflared 跑在 Cloudflare 的服务器上，你只要回源到 hebing 就行。这样 OpenWrt 上完全不用装 cloudflared。</div>
+    </li>
+  </ul>
+
+  <div class="ok">✅ 回到 Cloudflare DNS Records 页面，应该已经看到 A 记录自动生成了：<code>A  a  192.0.2.1  橙云 Proxied</code>。AAAA 是灰云，A 是橙云，完美。</div>
+
+  <!-- ========================================================== -->
+  <h2>飞牛 NAS · FPK 入口容器</h2>
+
+  <span class="step nas">飞牛 OS</span>
+  <ul class="click-flow">
+    <li>浏览器打开飞牛 OS：<code>http://NAS的IP</code> → 登录</li>
+    <li>左侧 <b>应用中心</b> → 搜索 <code>Docker</code> 或 <code>容器管理</code> → 如果没装先装一下</li>
+    <li>装完进 <b>容器管理</b> → 点右上角 <b>Compose</b> → <b>新建 compose 项目</b></li>
+    <li>
+      项目名填 <code>fpk-entry</code>，Compose 文件框里粘贴：
+      <pre style="background:#0c2340;color:#93c5fd;padding:12px;border-radius:6px;font-size:12px;">services:
+  fpk:
+    image: your-registry/fpk:latest   # 换成你实际的镜像
+    container_name: fpk-entry
+    restart: unless-stopped
+    ports:
+      - "8443:443"
+      - "8080:80"
+    volumes:
+      - ./data:/var/lib/fpk
+      - ./certs:/etc/ssl/fpk
+    environment:
+      - TZ=Asia/Shanghai</pre>
+    </li>
+    <li>点 <b>保存并启动</b></li>
+    <li>回到容器列表，看到 FPK 容器状态 <span style="color:#22c55e">● 运行中</span></li>
+  </ul>
+
+  <!-- ========================================================== -->
+  <h2>端到端验证（全程浏览器）</h2>
+
+  <span class="step browser">本地浏览器</span>
+
+  <h3>8.1 验证 v6 直连（主路径）</h3>
+  <ul class="click-flow">
+    <li>打开浏览器隐身窗口（避免缓存干扰）</li>
+    <li>地址栏输入 <code>https://a.c.xxx</code> → 回车</li>
+    <li>Chrome 按 <kbd>F12</kbd> 打开 DevTools → <b>Network</b> 标签 → 刷新页面</li>
+    <li>点第一条请求 → <b>Timing</b> 标签 → 看 <b>Connect</b> 时间
+      <div class="ok">Connect < 20ms → 走的 v6 直连 ✨ 太棒了</div>
+    </li>
+  </ul>
+
+  <h3>8.2 验证 v4 CF 穿透（兜底路径）</h3>
+  <ul class="click-flow">
+    <li>Mac 临时关掉 IPv6：系统设置 → 网络 → Wi-Fi/以太网 → 详情 → TCP/IP → <b>配置 IPv6</b> 选 <b>关闭</b> → 好</li>
+    <li>等 3 秒 → 回到浏览器隐身窗口重新打开 <code>https://a.c.xxx</code></li>
+    <li>DevTools → Network → Timing
+      <div class="ok">Connect 50~200ms，且响应头里有 <code>server: cloudflare</code> → 走的 CF 穿透 ✅</div>
+    </li>
+    <li>测完记得回去把 IPv6 打开</li>
+  </ul>
+
+  <h3>8.3 最终检查清单</h3>
+  <table>
+    <tr><th>#</th><th>检查项</th><th>在哪确认</th><th style="width:25%">通过标准</th></tr>
+    <tr><td>1</td><td>OpenWrt IPv6 通</td><td>LuCI 网络 → 诊断 → Ping <code>2400:3200::1</code></td><td>丢包 0%</td></tr>
+    <tr><td>2</td><td>AAAA 记录同步</td><td>CF DNS Records 页面</td><td>值跟路由器 WAN6 地址一致</td></tr>
+    <tr><td>3</td><td>A 记录橙云代理</td><td>CF DNS Records 页面</td><td>有橙云图标，Type=A</td></tr>
+    <tr><td>4</td><td>hebing 运行中</td><td>LuCI 服务 hebing 页面</td><td>● 运行中</td></tr>
+    <tr><td>5</td><td>CF Tunnel Healthy</td><td>Zero Trust → Tunnels</td><td>Healthy 绿色</td></tr>
+    <tr><td>6</td><td>FPK 容器运行</td><td>飞牛 OS → 容器管理</td><td>● 运行中</td></tr>
+    <tr><td>7</td><td>v6 直连通</td><td>浏览器 + DevTools Timing</td><td>Connect < 20ms</td></tr>
+    <tr><td>8</td><td>v4 穿透通</td><td>关 IPv6 后浏览器测试</td><td>有 <code>server: cloudflare</code> 响应头</td></tr>
+  </table>
+
+  <!-- ========================================================== -->
+  <h2>常见故障（也不用 SSH 查）</h2>
+
+  <h4>🔴 DDNS 显示报错 / 日志里说 "invalid credentials"</h4>
+  <p>CF API Token 过期或者没 DNS:Edit 权限。CF → My Profile → API Tokens → 重新生成一个，Scope 选 Edit zone DNS → 复制回 LuCI DDNS 密码栏保存即可。</p>
+
+  <h4>🔴 Zero Trust 隧道一直 Offline</h4>
+  <p>说明 cloudflared 客户端没连上。最简单的方案：去 Zero Trust 隧道 → Settings → 把 Tunnel 类型改成 <b>Cloudflare (previously named "cloudflared")</b> 的"Cloudflare 托管"模式，让 CF 自己跑，你只要回源 URL 指向 OpenWrt 的 hebing 就行。OpenWrt 上完全不用装 cloudflared。</p>
+
+  <h4>🔴 浏览器打开 a.c.xxx 超时</h4>
+  <ol>
+    <li>先看看 IPv6 防火墙规则在不在（LuCI → 网络 → 防火墙 → 通信规则）</li>
+    <li>hebing 服务有没有在跑（LuCI → 服务 → hebing）</li>
+    <li>端口对不对（UCI 配置里 hebing 的 listen_port = CF Tunnel URL 里写的 localhost 端口）</li>
+  </ol>
+
+  <h4>🔴 hebing 装不上 / 装完秒退</h4>
+  <p>LuCI → 系统 → 软件包 → 搜索 <code>hebing</code> 看装没装上。然后看 <b>系统 → 日志</b>，过滤 <code>hebing</code>，一般是端口被占了或者配置文件格式错了。</p>
+
+  <footer>
+    GUI 操作流程 · 双网关统一域名架构 · hebing OpenWrt 包配套文档 · 全程无 SSH · 2026-09-29
+  </footer>
+
+</div>
+</body>
+</html>

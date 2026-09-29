@@ -1,0 +1,14 @@
+# 这是 control 文件的示例模板，实际打包时由 scripts/build-ipk.sh 动态生成
+# .ipk 的 control 归档内部文件名必须是 "control"（不带 .example 后缀）
+Package: hebing
+Version: 0.1.0-1
+Architecture: x86_64
+Maintainer: Your Name <you@example.com>
+Section: net
+Priority: optional
+Depends: libc, bash, curl, ca-bundle
+Homepage: https://github.com/your-org/hebing
+License: MIT
+Installed-Size: 2048
+Description: hebing OpenWrt package
+  双网关统一域名相关的 OpenWrt 服务包

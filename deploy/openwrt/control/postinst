@@ -1,0 +1,26 @@
+#!/bin/sh
+# .ipk 安装/升级后的钩子
+# IPKG_INSTROOT 在 opkg 离线安装时非空，此时应跳过所有实际操作
+set -e
+
+[ -n "$IPKG_INSTROOT" ] && exit 0
+
+# 如果存在旧版数据目录迁移脚本，执行一下
+if [ -x /usr/libexec/hebing-migrate-data-dir ]; then
+	/usr/libexec/hebing-migrate-data-dir || true
+fi
+
+# 重置 LuCI 索引缓存（如果有 LuCI 集成）
+reload_luci() {
+	rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null || true
+	[ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd restart >/dev/null 2>&1 || true
+}
+
+# 启用并启动服务
+if [ -x /etc/init.d/hebing ]; then
+	/etc/init.d/hebing enable >/dev/null 2>&1 || true
+	/etc/init.d/hebing restart >/dev/null 2>&1 || true
+fi
+
+reload_luci
+exit 0

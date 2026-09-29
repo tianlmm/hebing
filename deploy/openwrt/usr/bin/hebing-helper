@@ -1,0 +1,4 @@
+#!/bin/sh
+# hebing 辅助命令占位脚本
+# 实际项目可替换为真正的 CLI 工具
+echo "hebing helper: $(basename "$0")"

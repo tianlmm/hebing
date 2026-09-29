@@ -1,0 +1,24 @@
+# 构建产物 / OpenWrt .ipk 打包输出
+dist/
+work/
+
+# 二进制与打包文件（GitHub Releases 里发，不进 git）
+*.ipk
+*.apk
+*.bin
+*.version
+
+# macOS
+.DS_Store
+.AppleDouble
+._*
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 临时文件
+*.log
+*.tmp

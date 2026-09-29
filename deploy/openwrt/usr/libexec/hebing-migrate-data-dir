@@ -1,0 +1,21 @@
+#!/bin/sh
+# 旧版数据目录迁移辅助脚本
+# 如果 UCI 里 data_dir 还指向旧路径 /var/lib/hebing，则迁移到 /etc/hebing/data
+set -e
+
+legacy_dir="${HEBING_LEGACY_DATA_DIR:-/var/lib/hebing}"
+new_dir="${HEBING_PERSISTENT_DATA_DIR:-/etc/hebing/data}"
+
+current="$(uci -q get hebing.main.data_dir 2>/dev/null || true)"
+[ "$current" = "$legacy_dir" ] || exit 0
+
+if [ -x /etc/init.d/hebing ]; then
+	/etc/init.d/hebing stop >/dev/null 2>&1 || true
+fi
+
+mkdir -p "$new_dir"
+[ -d "$legacy_dir" ] && cp -a "$legacy_dir/." "$new_dir/"
+chmod 700 "$new_dir"
+
+uci set "hebing.main.data_dir=$new_dir"
+uci commit hebing

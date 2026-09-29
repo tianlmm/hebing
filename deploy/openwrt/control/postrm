@@ -1,0 +1,11 @@
+#!/bin/sh
+# .ipk 卸载后的钩子：清理临时文件 + 重启 LuCI
+set -e
+
+[ -n "$IPKG_INSTROOT" ] && exit 0
+
+rm -rf /tmp/hebing-updates 2>/dev/null || true
+rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null || true
+[ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd restart >/dev/null 2>&1 || true
+
+exit 0

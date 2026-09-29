@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN" style="margin:0;padding:0;">
+<head>
+<meta charset="UTF-8">
+<title>双网关统一域名架构说明书</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    margin: 0; padding: 0;
+    line-height: 1.75;
+  }
+  .page { max-width: 1080px; margin: 0 auto; padding: 48px 32px 80px; }
+
+  /* ---- 标题区 ---- */
+  h1 { font-size: 28px; color: #fff; margin: 0 0 6px; font-weight: 700; letter-spacing: .5px; }
+  .subtitle { font-size: 14px; color: #94a3b8; margin-bottom: 28px; }
+  h2 {
+    font-size: 20px; color: #fff; margin: 40px 0 14px; font-weight: 700;
+    border-left: 4px solid #22d3ee; padding-left: 12px;
+  }
+  h3 { font-size: 15px; color: #a5f3fc; margin: 22px 0 8px; font-weight: 600; }
+  p  { margin: 6px 0; color: #cbd5e1; }
+  ul { padding-left: 20px; margin: 6px 0; }
+  ul li { margin: 3px 0; color: #cbd5e1; }
+  code {
+    background: #1e293b; color: #22d3ee; padding: 1px 6px; border-radius: 4px;
+    font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px;
+  }
+  pre {
+    background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font-size: 13px;
+    color: #e2e8f0; font-family: 'SF Mono', Menlo, Consolas, monospace;
+    margin: 8px 0 14px;
+  }
+  .hint {
+    background: #164e63; border-left: 3px solid #22d3ee; padding: 10px 14px;
+    border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 13px; color: #a5f3fc;
+  }
+  .warn {
+    background: #451a03; border-left: 3px solid #fbbf24; padding: 10px 14px;
+    border-radius: 0 6px 6px 0; margin: 12px 0; font-size: 13px; color: #fde68a;
+  }
+
+  /* ---- 表格 ---- */
+  table {
+    width: 100%; border-collapse: collapse; margin: 10px 0 16px;
+    font-size: 14px; background: #1e293b; border-radius: 8px; overflow: hidden;
+  }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #334155; }
+  th { background: #0f766e; color: #fff; font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #263348; }
+
+  /* ---- 架构图容器 ---- */
+  .diagram {
+    background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+    padding: 20px; margin: 18px 0 28px;
+  }
+
+  /* ---- 卡片 ---- */
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 14px 0; }
+  .card {
+    background: #1e293b; border-radius: 10px; padding: 18px;
+    border-top: 3px solid #2dd4bf;
+  }
+  .card.card-v4 { border-top-color: #38bdf8; }
+  .card-title { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+  .card-desc { font-size: 13px; color: #94a3b8; }
+
+  /* ---- 流程步骤 ---- */
+  .steps { counter-reset: step; margin: 10px 0; padding-left: 0; list-style: none; }
+  .steps li {
+    counter-increment: step; position: relative; padding-left: 42px;
+    margin-bottom: 14px; color: #cbd5e1;
+  }
+  .steps li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: 0;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #0f766e; color: #fff; font-size: 13px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .steps.card-v4 li::before { background: #0369a1; }
+
+  footer {
+    margin-top: 60px; padding-top: 20px; border-top: 1px solid #334155;
+    font-size: 12px; color: #64748b; text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ====== 标题 ====== -->
+  <h1>双网关统一域名架构说明书</h1>
+  <div class="subtitle">一个域名 a.c.xxx → 有 v6 走 DDNS 直连，无 v4 走 Cloudflare 穿透 → 收敛到 FPK 入口容器</div>
+
+  <!-- ====== 架构图 ====== -->
+  <h2>一、架构总览</h2>
+  <p>客户端只记一个域名，DNS 层自动判断地址族：返回 AAAA 走网关A 直连 IPv6；只剩 A 走网关B 经 CF 边缘穿透回源。两条链路最终都收敛到 FPK 入口容器做反代收口。</p>
+
+  <div class="diagram">
+    <!-- 以下 SVG 原样复用 -->
+    <svg viewBox="0 0 960 420" width="100%" style="max-width:960px;display:block;">
+      <!-- 客户端 -->
+      <rect x="10" y="150" width="160" height="120" rx="10" fill="#1e293b" stroke="#475569"/>
+      <text x="90" y="182" font-size="14" fill="#fff" text-anchor="middle" font-weight="700">客户端</text>
+      <text x="90" y="208" font-size="11" fill="#94a3b8" text-anchor="middle">● 仅 IPv4</text>
+      <text x="90" y="228" font-size="11" fill="#94a3b8" text-anchor="middle">● IPv6 可用</text>
+      <text x="90" y="248" font-size="10" fill="#64748b" text-anchor="middle">连的都是 a.c.xxx</text>
+
+      <!-- 统一域名 -->
+      <rect x="230" y="165" width="180" height="90" rx="12" fill="#164e63" stroke="#22d3ee"/>
+      <text x="320" y="196" font-size="17" fill="#fff" text-anchor="middle" font-weight="700">统一域名</text>
+      <text x="320" y="218" font-size="12" fill="#a5f3fc" text-anchor="middle">a.c.xxx</text>
+      <text x="320" y="240" font-size="10" fill="#94a3b8" text-anchor="middle">总入口 · 自动判断地址族</text>
+
+      <!-- 分流判断 -->
+      <polygon points="520,210 610,210 640,210 610,240 520,240 490,225" fill="#0f172a" stroke="#fbbf24"/>
+      <text x="565" y="228" font-size="12" fill="#fde68a" text-anchor="middle">判断</text>
+
+      <!-- 上: DDNS 网关 v6 -->
+      <rect x="700" y="40" width="200" height="90" rx="10" fill="#0f766e" stroke="#2dd4bf"/>
+      <text x="800" y="68" font-size="13" fill="#fff" text-anchor="middle" font-weight="700">网关A · DDNS 直连</text>
+      <text x="800" y="90" font-size="11" fill="#99f6e4" text-anchor="middle">有 IPv6 → AAAA 记录</text>
+      <text x="800" y="108" font-size="11" fill="#94a3b8" text-anchor="middle">DDNS 同步 NAS 公网 v6</text>
+      <text x="800" y="124" font-size="10" fill="#64748b" text-anchor="middle">v6 直连，快/稳</text>
+
+      <!-- 下: CF 隧道网关 v4 -->
+      <rect x="700" y="250" width="200" height="90" rx="10" fill="#1e293b" stroke="#38bdf8"/>
+      <text x="800" y="278" font-size="13" fill="#fff" text-anchor="middle" font-weight="700">网关B · CF 穿透</text>
+      <text x="800" y="300" font-size="11" fill="#7dd3fc" text-anchor="middle">无 IPv4 → A 记录</text>
+      <text x="800" y="318" font-size="11" fill="#94a3b8" text-anchor="middle">knock 隧道兜底</text>
+      <text x="800" y="334" font-size="10" fill="#64748b" text-anchor="middle">v4 经 CF 边缘回源</text>
+
+      <!-- 收敛 FPK -->
+      <rect x="380" y="330" width="240" height="64" rx="10" fill="#4a1d96" stroke="#a78bfa"/>
+      <text x="500" y="356" font-size="13" fill="#fff" text-anchor="middle" font-weight="700">FPK 入口容器（反代收口）</text>
+      <text x="500" y="378" font-size="10" fill="#ddd6fe" text-anchor="middle">→ 飞牛客户端</text>
+
+      <!-- 连线 -->
+      <line x1="170" y1="210" x2="230" y2="210" stroke="#64748b" stroke-width="2"/>
+      <line x1="410" y1="210" x2="490" y2="225" stroke="#22d3ee" stroke-width="2"/>
+      <line x1="560" y1="212" x2="700" y2="85" stroke="#2dd4bf" stroke-width="2" stroke-dasharray="5,4"/>
+      <text x="632" y="100" font-size="11" fill="#fde68a" text-anchor="middle">有 v6</text>
+      <line x1="560" y1="238" x2="700" y2="295" stroke="#38bdf8" stroke-width="2" stroke-dasharray="5,4"/>
+      <text x="632" y="270" font-size="11" fill="#fde68a" text-anchor="middle">仅 v4</text>
+      <!-- 收敛到 FPK -->
+      <line x1="800" y1="130" x2="560" y2="360" stroke="#2dd4bf" stroke-width="2" stroke-dasharray="3,4"/>
+      <line x1="800" y1="340" x2="620" y2="360" stroke="#38bdf8" stroke-width="2" stroke-dasharray="3,4"/>
+      <text x="660" y="356" font-size="11" fill="#94a3b8" text-anchor="middle">双网关收敛</text>
+    </svg>
+  </div>
+
+  <!-- ====== DNS 分流逻辑 ====== -->
+  <h2>二、DNS 分流逻辑</h2>
+  <p>关键在 DNS 记录的"自动分流"：<code>a.c.xxx</code> 同时挂 AAAA 和 A 两条记录，客户端操作系统按自身协议栈优先选择：</p>
+
+  <table>
+    <tr>
+      <th style="width:18%">DNS 记录</th>
+      <th style="width:22%">值</th>
+      <th style="width:15%">对应链路</th>
+      <th>说明</th>
+    </tr>
+    <tr>
+      <td><code>a.c.xxx</code> AAAA</td>
+      <td>NAS 公网 IPv6</td>
+      <td>网关A · DDNS 直连</td>
+      <td>DDNS 脚本实时同步，客户端直接拿到 NAS v6 地址，零转发延迟</td>
+    </tr>
+    <tr>
+      <td><code>a.c.xxx</code> A</td>
+      <td>Cloudflare 隧道指向的 IP</td>
+      <td>网关B · CF 穿透</td>
+      <td>NAS 没有公网 IPv4，所以这条走 CF 边缘节点 + knock 隧道回源</td>
+    </tr>
+  </table>
+
+  <div class="hint">
+    <b>为什么能自动分流？</b> 现代操作系统（Windows 10+/macOS 10.15+/Linux glibc）的 happy-eyeballs 算法会同时探测 AAAA 和 A，哪个通哪个优先。没有 IPv6 的网络（纯 v4）会直接跳过 AAAA，走 A 记录 → CF 穿透兜底。
+  </div>
+
+  <!-- ====== 网关A ====== -->
+  <h2>三、网关A · DDNS IPv6 直连（主路径）</h2>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">🎯 目标</div>
+      <div class="card-desc">NAS 的公网 IPv6 地址直接暴露，客户端 v6 网络直连，不经过任何第三跳。</div>
+    </div>
+    <div class="card">
+      <div class="card-title">⚡ 优势</div>
+      <div class="card-desc">延迟最低（1~10ms）、带宽无损、不依赖任何外部服务。</div>
+    </div>
+  </div>
+
+  <h3>3.1 前置条件</h3>
+  <ul>
+    <li>路由器已拿到 <b>IPv6 前缀</b>（运营商分配 /60 或 /64）</li>
+    <li>NAS 获得一个可被外部路由的 <b>公网 IPv6 地址</b>（不是 ULA fdxx::）</li>
+    <li>域名 DNS 提供商支持 DDNS 更新（Cloudflare / 阿里云 / 腾讯云等）</li>
+  </ul>
+
+  <h3>3.2 配置步骤</h3>
+  <ol class="steps">
+    <li>在 OpenWrt 路由器上启用 IPv6 防火墙入站规则，放行 NAS 的目标端口（通常是 FPK 的 80/443 或服务端口）</li>
+    <li>部署 DDNS 客户端。OpenWrt 自带 <code>luci-app-ddns</code>，用它把 NAS 的 IPv6 同步到 <code>a.c.xxx</code> 的 AAAA 记录
+      <pre># OpenWrt /etc/config/ddns 示例
+config service 'v6_ddns'
+    option enabled '1'
+    option interface 'wan6'
+    option use_ipv6 '1'
+    option ip_source 'web'
+    option ip_url 'https://api64.ipify.org'
+    option update_url 'https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}'
+    ...</pre>
+    </li>
+    <li>在 NAS 上用 <code>curl -6 ifconfig.me</code> 验证公网 v6 可达</li>
+    <li>DNS 服务器上 <code>dig AAAA a.c.xxx</code> 确认 AAAA 记录已生效</li>
+  </ol>
+
+  <!-- ====== 网关B ====== -->
+  <h2>四、网关B · Cloudflare 隧道 IPv4 穿透（兜底）</h2>
+  <div class="card-grid">
+    <div class="card card-v4">
+      <div class="card-title">🎯 目标</div>
+      <div class="card-desc">NAS 没有公网 IPv4，通过 Cloudflare 边缘节点 + knock 隧道回源，让纯 v4 客户端也能访问。</div>
+    </div>
+    <div class="card card-v4">
+      <div class="card-title">🛡️ 优势</div>
+      <div class="card-desc">不暴露源站真实 IP、自带 DDoS/CDN 防护、配合 knock 隧道安全认证。</div>
+    </div>
+  </div>
+
+  <h3>4.1 前置条件</h3>
+  <ul>
+    <li>域名已托管到 <b>Cloudflare</b>（或其他支持 Tunnel 的 DNS 服务商）</li>
+    <li>NAS/路由器上能运行 <code>cloudflared</code> 或 knock 隧道客户端</li>
+  </ul>
+
+  <h3>4.2 配置步骤</h3>
+  <ol class="steps card-v4">
+    <li>Cloudflare Dashboard → Zero Trust → Tunnels → 创建隧道，拿到 <code>cloudflared</code> token</li>
+    <li>在 OpenWrt 上安装 <code>cloudflared</code>（或使用 <b>hebing</b> / knock 隧道客户端），启动隧道
+      <pre># cloudflared 典型启动命令
+cloudflared tunnel run --token {your-cloudflared-token}</pre>
+    </li>
+    <li>在 Cloudflare Dashboard 里配置 Public Hostname：<code>a.c.xxx → http://localhost:7999</code>（假设 knock 隧道监听 7999）</li>
+    <li>DNS 自动生成一条 <code>A a.c.xxx → 192.0.2.1</code>（Cloudflare 边缘保留 IP），纯 v4 客户端会命中这条</li>
+    <li>验证：<code>curl -4 https://a.c.xxx</code> 应该能通过 CF 边缘回源到 knock 隧道</li>
+  </ol>
+
+  <!-- ====== DNS 记录总表 ====== -->
+  <h2>五、DNS 记录总表</h2>
+  <p>在 Cloudflare DNS 面板上最终应看到：</p>
+  <table>
+    <tr><th>类型</th><th>名称</th><th>值</th><th>代理状态</th><th>TTL</th></tr>
+    <tr><td><code>AAAA</code></td><td><code>a</code></td><td>NAS 公网 IPv6</td><td>仅 DNS（灰色云朵）</td><td>1 min（DDNS 要求）</td></tr>
+    <tr><td><code>A</code></td><td><code>a</code></td><td>Cloudflare Tunnel 自动生成</td><td>橙云代理</td><td>Auto</td></tr>
+  </table>
+
+  <div class="warn">
+    <b>注意：</b>AAAA 记录<b>必须关闭</b> Cloudflare 代理（灰云），否则 v6 请求也会被 CF 边缘拦截，直连路径废掉。只有 A 记录走橙云代理让 CF 处理。
+  </div>
+
+  <!-- ====== FPK 收口 ====== -->
+  <h2>六、FPK 入口容器收口</h2>
+  <p>两条链路最终都到达同一套 FPK 入口容器（反向代理 + 安全门），它负责：</p>
+  <ul>
+    <li>统一 TLS 终止 / 证书管理（ACME 自动续签）</li>
+    <li>反向代理到后端实际服务</li>
+    <li>访问控制 / knock 认证 / 限速</li>
+  </ul>
+  <p>路径：</p>
+  <pre>客户端 → a.c.xxx → { FPK 入口 :80/443 } → 后端服务</pre>
+
+  <!-- ====== OpenWrt 侧 hebing ====== -->
+  <h2>七、OpenWrt 侧 hebing 的角色</h2>
+  <p>本仓库的 <code>hebing</code> 服务包跑在 OpenWrt 路由器上，承担：</p>
+  <table>
+    <tr><th>组件</th><th>作用</th></tr>
+    <tr><td>hebing 二进制</td><td>网关服务，监听指定端口，转发请求到 FPK 或 knock 隧道</td></tr>
+    <tr><td>/etc/init.d/hebing</td><td>procd 管理，<code>respawn</code> 自动拉起崩溃实例</td></tr>
+    <tr><td>/etc/config/hebing</td><td>UCI 配置：端口、监听地址、数据目录</td></tr>
+    <tr><td>knock 隧道</td><td>配合 Cloudflare 兜底路径做 v4 穿透</td></tr>
+  </table>
+
+  <h3>7.1 安装</h3>
+  <pre># 在路由器上
+opkg install /tmp/hebing_0.1.0-1_x86_64.ipk
+/etc/init.d/hebing status   # 查看 procd 状态
+/etc/init.d/hebing enable   # 开机自启</pre>
+
+  <h3>7.2 常用配置</h3>
+  <pre># 改监听端口
+uci set hebing.main.listen_port='8443'
+uci commit hebing
+/etc/init.d/hebing restart</pre>
+
+  <!-- ====== 故障排查 ====== -->
+  <h2>八、故障排查</h2>
+
+  <h3>场景 1：v6 直连不通，v4 CF 穿透正常</h3>
+  <ol class="steps">
+    <li>路由器上 <code>ping -6 ipv6.google.com</code> 确认 IPv6 本身通</li>
+    <li><code>dig AAAA a.c.xxx</code> 确认 AAAA 记录正确</li>
+    <li>临时关 OpenWrt IPv6 防火墙：<code>fw4 flush</code> 或 <code>/etc/init.d/firewall restart</code> 看是否防火墙拦截</li>
+    <li>确认 NAS 的 IPv6 不是 ULA（<code>fd</code> 开头的都是内网，不可路由）</li>
+  </ol>
+
+  <h3>场景 2：v4 CF 穿透不通，v6 正常</h3>
+  <ol class="steps">
+    <li>Cloudflare Zero Trust → Tunnels → 查看隧道连接状态是否 Healthy</li>
+    <li><code>cloudflared tunnel info &lt;tunnel-id&gt;</code> 看日志</li>
+    <li>本地 <code>curl http://localhost:7999</code> 确认 knock 隧道本地端口正常</li>
+    <li>DNS 的 A 记录是否橙云代理打开</li>
+  </ol>
+
+  <h3>场景 3：全部不通</h3>
+  <ol class="steps">
+    <li>hebing 服务状态：<code>/etc/init.d/hebing status</code></li>
+    <li>重启服务：<code>/etc/init.d/hebing restart</code></li>
+    <li>看日志：<code>logread | grep hebing</code></li>
+    <li>端口被占？<code>netstat -tlnp | grep 8080</code></li>
+  </ol>
+
+  <footer>
+    双网关统一域名架构说明书 · hebing OpenWrt 包配套文档 · 生成日期 2026-09-29
+  </footer>
+
+</div>
+</body>
+</html>
