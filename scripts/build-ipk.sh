@@ -33,9 +33,11 @@ VERSION="${VERSION:-0.1.0}"
 RELEASE="${RELEASE:-1}"
 DEPENDS="${DEPENDS:-libc, bash, curl, ca-bundle}"
 MAINTAINER="${MAINTAINER:-Your Name <you@example.com>}"
-HOMEPAGE="${HOMEPAGE:-https://github.com/your-org/hebing}"
+HOMEPAGE="${HOMEPAGE:-https://github.com/tianlmm/hebing}"
 LICENSE="${LICENSE:-MIT}"
 ARCH="${ARCH:-x86_64}"
+# ipk 容器格式: ar (传统格式, opkg 全版本兼容) 或 tar (新版 opkg 支持)
+IPK_FORMAT="${IPK_FORMAT:-ar}"
 BIN_DIR="${BIN_DIR:-${ROOT_DIR}/dist/bin}"
 UI_DIR="${UI_DIR:-}"
 OUTPUT_DIR="${OUTPUT_DIR:-${ROOT_DIR}/dist/openwrt}"
@@ -179,26 +181,33 @@ validate_root_ownership() {
 	[ -z "${bad}" ] || { printf '%s\n' "${bad}" >&2; fail "${tarball} 包含非 root 所有者条目"; }
 }
 
-# --- 把 control 和 data 打成 tar 格式的 .ipk ---
-# OpenWrt 的 .ipk 现在主流是 tar 容器（不是 ar），内部包含：
-#   debian-binary  → 固定内容 "2.0\n"
-#   control.tar.gz → control 元数据
-#   data.tar.gz    → 文件内容
-create_ipk() {
-	local package_work_dir="$1"
-	local ipk_path="$2"
-	local debian_binary="$3"
-	local control_tar="$4"
-	local data_tar="$5"
+# --- ar 容器 ipk 组装 ---
+# OpenWrt 传统 .ipk 是 ar archive（debian-binary 是 magic），内部成员顺序：
+#   1. debian-binary    → 文件 "2.0\n"
+#   2. control.tar.gz    → control 元数据
+#   3. data.tar.gz       → 文件内容
+# 用 Python 辅助脚本生成，避免 shell 手工拼 ar header 时 printf escape 踩坑。
+SCRIPT_DIR_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+build_ar_ipk_py="${SCRIPT_DIR_PY}/_build_ar_ipk.py"
+create_ar_ipk() {
+	local archive="$1" debian_binary="$2" control_tar="$3" data_tar="$4"
+	require_cmd python3
+	python3 "${build_ar_ipk_py}" "${archive}" "${debian_binary}" "${control_tar}" "${data_tar}"
+}
+
+# --- tar 容器 ipk 组装（新版 opkg 支持，旧版可能不认）---
+create_tar_ipk() {
+	local archive="$1" debian_binary="$2" control_tar="$3" data_tar="$4"
 
 	COPYFILE_DISABLE=1 tar \
 		"${TAR_OWNER[@]}" \
 		--format=ustar \
-		-czf "${ipk_path}" \
-		-C "${package_work_dir}" \
-		./debian-binary \
-		./data.tar.gz \
-		./control.tar.gz
+		-czf "${archive}" \
+		--owner=0 --group=0 --numeric-owner \
+		-C "$(dirname "${debian_binary}")" \
+		"$(basename "${debian_binary}")" \
+		"$(basename "${data_tar}")" \
+		"$(basename "${control_tar}")"
 }
 
 # --- 主流程 ---
@@ -207,6 +216,7 @@ main() {
 	require_cmd rsync
 	require_cmd file
 	configure_tar
+	[ "${IPK_FORMAT}" = "tar" ] && require_cmd ar  # ar 格式不需要，我们手写
 
 	rm -rf "${OUTPUT_DIR}"
 	mkdir -p "${OUTPUT_DIR}" "${WORK_DIR}"
@@ -219,7 +229,7 @@ main() {
 	local debian_binary="${package_work_dir}/debian-binary"
 	local ipk_path="${OUTPUT_DIR}/${APP_NAME}_${VERSION}-${RELEASE}_${ARCH}.ipk"
 
-	log "构建 .ipk: ${APP_NAME} v${VERSION}-${RELEASE} arch=${ARCH}"
+	log "构建 .ipk: ${APP_NAME} v${VERSION}-${RELEASE} arch=${ARCH} format=${IPK_FORMAT}"
 
 	mkdir -p "${control_dir}" "${data_dir}"
 
@@ -247,43 +257,67 @@ main() {
 		.
 
 	rm -f "${ipk_path}"
-	create_ipk "${package_work_dir}" "${ipk_path}" "${debian_binary}" "${control_tar}" "${data_tar}"
+	case "${IPK_FORMAT}" in
+		ar)  create_ar_ipk  "${ipk_path}" "${debian_binary}" "${control_tar}" "${data_tar}" ;;
+		tar)  create_tar_ipk "${ipk_path}" "${debian_binary}" "${control_tar}" "${data_tar}" ;;
+		*)    fail "无效 IPK_FORMAT: ${IPK_FORMAT}（支持 ar / tar）" ;;
+	esac
 
-	# --- 校验 ---
-	log "校验 .ipk 结构"
-	local listing
-	listing="$(tar -tzf "${ipk_path}" | sed -e 's#^\./##' -e '/^$/d' | sort)"
-	local expected
-	expected="$(printf 'debian-binary\ncontrol.tar.gz\ndata.tar.gz' | sort)"
-	if [ "${listing}" != "${expected}" ]; then
-		printf '实际内容:\n%s\n期望内容:\n%s\n' "${listing}" "${expected}" >&2
-		fail ".ipk 内部结构不符合预期（debian-binary / data.tar.gz / control.tar.gz）"
-	fi
+	# --- 校验 .ipk 容器 ---
+	log "校验 .ipk 容器格式"
+	case "${IPK_FORMAT}" in
+		ar)
+			local magic
+			magic="$(head -c 8 "${ipk_path}")"
+			[ "${magic}" = "!<arch>" ] || fail ".ipk ar magic 不对 (前 8 字节应为 !<arch>\\n)"
+			log "  ar magic OK"
+			;;
+		tar)
+			local listing
+			listing="$(tar -tzf "${ipk_path}" | sed -e 's#^\./##' -e '/^$/d' | sort)"
+			local expected
+			expected="$(printf 'debian-binary\ncontrol.tar.gz\ndata.tar.gz' | sort)"
+			[ "${listing}" = "${expected}" ] || { printf '实际内容:\n%s\n期望内容:\n%s\n' "${listing}" "${expected}" >&2; fail ".ipk 内部结构不对"; }
+			validate_root_ownership "${ipk_path}"
+			;;
+	esac
 
-	validate_root_ownership "${control_tar}"
-	validate_root_ownership "${data_tar}"
-	validate_root_ownership "${ipk_path}"
+	# --- 解出 debian-binary / control.tar.gz / data.tar.gz ---
+	local inspect_dir="${WORK_DIR}/inspect"
+	rm -rf "${inspect_dir}" && mkdir -p "${inspect_dir}"
+	case "${IPK_FORMAT}" in
+		ar)  python3 "${SCRIPT_DIR_PY}/_extract_ar_ipk.py" "${ipk_path}" "${inspect_dir}" ;;
+		tar)  tar -xzf "${ipk_path}" -C "${inspect_dir}" ;;
+	esac
 
-	# 检查 control 内容
+	# debian-binary
+	local db_content
+	db_content="$(tr -d '\n' < "${inspect_dir}/debian-binary")"
+	[ "${db_content}" = "2.0" ] || fail "debian-binary 内容不对，应为 '2.0'，实际 '${db_content}'"
+	log "  debian-binary = 2.0 OK"
+
+	# control.tar.gz
+	[ -f "${inspect_dir}/control.tar.gz" ] || fail "解不出 control.tar.gz"
+	validate_root_ownership "${inspect_dir}/control.tar.gz"
 	local ctrl
-	ctrl="$(tar -xOzf "${control_tar}" ./control)"
-	printf '%s\n' "${ctrl}" | grep -Fxq "Package: ${APP_NAME}"   || fail "control 元数据缺少 Package"
-	printf '%s\n' "${ctrl}" | grep -Fxq "Architecture: ${ARCH}"   || fail "control 元数据缺少 Architecture"
-	printf '%s\n' "${ctrl}" | grep -Fxq "Version: ${VERSION}-${RELEASE}" || fail "control 元数据缺少 Version"
+	ctrl="$(tar -xOzf "${inspect_dir}/control.tar.gz" ./control)"
+	printf '%s\n' "${ctrl}" | grep -Fxq "Package: ${APP_NAME}"   || fail "control 缺少 Package"
+	printf '%s\n' "${ctrl}" | grep -Fxq "Architecture: ${ARCH}"   || fail "control 缺少 Architecture"
+	printf '%s\n' "${ctrl}" | grep -Fxq "Version: ${VERSION}-${RELEASE}" || fail "control 缺少 Version"
 
-	# 检查关键文件都在
+	# data.tar.gz
+	[ -f "${inspect_dir}/data.tar.gz" ] || fail "解不出 data.tar.gz"
+	validate_root_ownership "${inspect_dir}/data.tar.gz"
+	log "校验 OK: ${ipk_path}"
+
+	# data.tar.gz 内容完整性快速检查
 	local data_listing
-	data_listing="$(tar -tzf "${data_tar}" | sed -e 's#^\./##' -e '/^$/d')"
-	grep -Fqx "etc/config/${APP_NAME}" <<<"${data_listing}" || fail "data.tar.gz 缺少 etc/config/${APP_NAME}"
-	grep -Fqx "etc/init.d/${APP_NAME}" <<<"${data_listing}" || fail "data.tar.gz 缺少 etc/init.d/${APP_NAME}"
+	data_listing="$(tar -tzf "${inspect_dir}/data.tar.gz" | sed -e 's#^\./##' -e '/^$/d')"
+	grep -Fqx "etc/config/${APP_NAME}" <<<"${data_listing}" || fail "data 缺少 etc/config/${APP_NAME}"
+	grep -Fqx "etc/init.d/${APP_NAME}" <<<"${data_listing}" || fail "data 缺少 etc/init.d/${APP_NAME}"
 
-	# 最终 size
 	local bytes
-	if command -v gstat >/dev/null 2>&1; then
-		bytes="$(gstat -c%s "${ipk_path}")"
-	else
-		bytes="$(wc -c < "${ipk_path}" | tr -d '[:space:]')"
-	fi
+	bytes="$(wc -c < "${ipk_path}" | tr -d '[:space:]')"
 	log "构建完成: ${ipk_path} ($(awk -v b="${bytes}" 'BEGIN{printf "%.1f MiB", b/1048576}'))"
 }
 
